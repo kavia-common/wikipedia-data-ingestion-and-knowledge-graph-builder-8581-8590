@@ -26,14 +26,22 @@ urlpatterns = [
     path('api/', include('api.urls')),
 ]
 
+# Central schema information
+API_INFO = openapi.Info(
+    title="Wikipedia Ingestion API",
+    default_version="v1",
+    description=(
+        "Endpoints for uploading CSVs of topics/links, processing Wikipedia content, "
+        "chunking and embedding text, and ingesting into a Neo4j knowledge graph."
+    ),
+    contact=openapi.Contact(email="support@example.com"),
+    license=openapi.License(name="MIT License"),
+)
+
 schema_view = get_schema_view(
-   openapi.Info(
-      title="My API",
-      default_version='v1',
-      description="Test description",
-   ),
-   public=True,
-   permission_classes=(permissions.AllowAny,),
+    API_INFO,
+    public=True,
+    permission_classes=(permissions.AllowAny,),
 )
 
 def get_full_url(request):
@@ -48,13 +56,13 @@ def get_full_url(request):
 
 @csrf_exempt
 def dynamic_schema_view(request, *args, **kwargs):
+    """
+    Dynamic Swagger UI that sets the absolute URL based on the incoming request.
+    This ensures correct schema host when running behind proxies or in CI.
+    """
     url = get_full_url(request)
     view = get_schema_view(
-        openapi.Info(
-            title="My API",
-            default_version='v1',
-            description="API Docs",
-        ),
+        API_INFO,
         public=True,
         url=url,
     )

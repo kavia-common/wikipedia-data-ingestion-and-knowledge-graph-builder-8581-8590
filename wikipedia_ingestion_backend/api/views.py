@@ -29,9 +29,23 @@ logger = get_logger(__name__)
 
 
 # PUBLIC_INTERFACE
+@swagger_auto_schema(
+    method="get",
+    operation_id="health",
+    operation_summary="Service health check",
+    operation_description="Returns a simple message indicating the API is reachable.",
+    responses={200: openapi.Response(description="OK", schema=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={"message": openapi.Schema(type=openapi.TYPE_STRING, description="Uptime message")},
+        required=["message"],
+    ))},
+    tags=["health"],
+)
 @api_view(["GET"])
 def health(request):
     """
+    GET /api/health/
+
     Simple health endpoint.
 
     Returns:
@@ -45,14 +59,17 @@ def health(request):
     method="post",
     operation_id="upload_csv_ingest",
     operation_summary="Upload CSV for ingestion",
-    operation_description="Upload a CSV file with topics or Wikipedia links to create a job and start processing.",
+    operation_description=(
+        "Upload a CSV file with topics or Wikipedia links to create an ingestion job and start processing. "
+        "The server will parse the CSV, classify values as TOPIC or LINK, and kick off the RAG pipeline."
+    ),
     request_body=UploadCSVRequestSerializer,
     responses={
         200: openapi.Response(
-            description="Ingestion job created and processing started.",
+            description="Ingestion job created. If background mode is enabled, processing continues asynchronously.",
             schema=StandardResponseSerializer,
         ),
-        400: "Invalid input",
+        400: openapi.Response(description="Invalid input"),
     },
     tags=["ingestion"],
 )
@@ -178,14 +195,17 @@ def upload_csv(request):
     method="post",
     operation_id="single_value_ingest",
     operation_summary="Ingest a single topic or link",
-    operation_description="Create a job for a single topic or Wikipedia URL and process immediately.",
+    operation_description=(
+        "Create a job for a single topic or Wikipedia URL and process via the RAG pipeline. "
+        "Depending on configuration, it runs asynchronously or synchronously."
+    ),
     request_body=SingleIngestRequestSerializer,
     responses={
         200: openapi.Response(
-            description="Single ingest job created and processed.",
+            description="Single ingest job created and either submitted or completed.",
             schema=StandardResponseSerializer,
         ),
-        400: "Invalid input",
+        400: openapi.Response(description="Invalid input"),
     },
     tags=["ingestion"],
 )
