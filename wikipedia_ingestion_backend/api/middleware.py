@@ -20,6 +20,7 @@ class RequestIDMiddleware(MiddlewareMixin):
     Attaches request_id to the request object for correlation in logs.
 
     The request_id is taken from header X-Request-ID or generated if missing.
+    Adds X-Request-ID to the response for client correlation.
     """
 
     def process_request(self, request):

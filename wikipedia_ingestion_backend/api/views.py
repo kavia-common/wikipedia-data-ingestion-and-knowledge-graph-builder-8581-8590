@@ -28,9 +28,15 @@ from .utils.context import build_log_ctx
 logger = get_logger(__name__)
 
 
+# PUBLIC_INTERFACE
 @api_view(["GET"])
 def health(request):
-    """Simple health endpoint."""
+    """
+    Simple health endpoint.
+
+    Returns:
+        200 OK with a small JSON body indicating service availability.
+    """
     return Response({"message": "Server is up!"})
 
 

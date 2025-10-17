@@ -51,7 +51,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # CORS early to handle OPTIONS
     "corsheaders.middleware.CorsMiddleware",
+    # Security and common stack
     "django.middleware.common.CommonMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -117,6 +119,20 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 X_FRAME_OPTIONS = "ALLOWALL"
 
+# DRF config including centralized exception handler
+REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+        # Browsable API can be added in DEBUG if desired
+    ],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+        "rest_framework.parsers.FormParser",
+        "rest_framework.parsers.MultiPartParser",
+    ],
+    "EXCEPTION_HANDLER": "api.exception_handlers.custom_exception_handler",
+}
+
 # RAG / Neo4j / LLM configuration defaults (read by future modules)
 NEO4J_URI = env("NEO4J_URI", default="")
 NEO4J_USER = env("NEO4J_USER", default="")
@@ -138,7 +154,7 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "verbose": {
-            # Include optional structured context dict if present
+            # Include optional structured context dict if present (injected via build_log_ctx)
             "format": "%(asctime)s | %(levelname)s | %(name)s | %(message)s | %(context)s",
         },
         "simple": {
