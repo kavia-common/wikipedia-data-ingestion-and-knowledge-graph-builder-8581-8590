@@ -50,6 +50,7 @@ def _ensure_openai():
         try:
             from openai import OpenAI  # type: ignore
         except Exception as e:
+            logger.error("OpenAI client not available", extra={"context": {"error": str(e)}})
             raise RuntimeError("OpenAI client not available. Install openai package.") from e
 
         key = get_openai_api_key()

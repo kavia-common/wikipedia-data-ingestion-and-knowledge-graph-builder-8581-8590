@@ -28,6 +28,8 @@ from neo4j import GraphDatabase, Driver, Session
 
 from api.utils.env import get_neo4j_password, get_neo4j_uri, get_neo4j_user
 from api.utils.logging import get_logger
+from api.exceptions import Neo4jWriteError
+from api.utils.context import build_log_ctx
 
 logger = get_logger(__name__)
 
@@ -54,8 +56,19 @@ class Neo4jWriter:
     def _get_driver(self) -> Driver:
         if self._driver is None:
             if not (self._uri and self._user and self._password):
-                raise RuntimeError("Neo4j credentials are not configured via environment variables.")
-            self._driver = GraphDatabase.driver(self._uri, auth=(self._user, self._password))
+                logger.error(
+                    "Neo4j credentials are missing",
+                    extra=build_log_ctx(extra={"uri": bool(self._uri), "user": bool(self._user)}),
+                )
+                raise Neo4jWriteError("Neo4j credentials are not configured via environment variables.")
+            try:
+                self._driver = GraphDatabase.driver(self._uri, auth=(self._user, self._password))
+            except Exception as e:
+                logger.error(
+                    "Failed to create Neo4j driver",
+                    extra=build_log_ctx(extra={"uri": self._uri, "error": str(e)}),
+                )
+                raise Neo4jWriteError(f"Failed to create Neo4j driver: {e}") from e
         return self._driver
 
     def close(self):
@@ -94,62 +107,92 @@ class Neo4jWriter:
         Returns:
             Tuple (article_count, chunk_created_or_merged_count)
         """
-        driver = self._get_driver()
-        with driver.session() as session:
-            self._ensure_schema(session)
+        try:
+            driver = self._get_driver()
+            with driver.session() as session:
+                try:
+                    self._ensure_schema(session)
+                except Exception as e:
+                    logger.error(
+                        "Failed ensuring Neo4j schema",
+                        extra=build_log_ctx(extra={"title": title, "url": url, "error": str(e)}),
+                    )
+                    raise Neo4jWriteError(f"Failed ensuring Neo4j schema: {e}") from e
 
-            # MERGE the article first
-            session.run(
-                """
-                MERGE (a:Article {title: $title})
-                ON CREATE SET a.url = $url
-                ON MATCH SET a.url = coalesce(a.url, $url)
-                """,
-                {"title": title, "url": url},
-            )
+                # MERGE the article first
+                try:
+                    session.run(
+                        """
+                        MERGE (a:Article {title: $title})
+                        ON CREATE SET a.url = $url
+                        ON MATCH SET a.url = coalesce(a.url, $url)
+                        """,
+                        {"title": title, "url": url},
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed merging article",
+                        extra=build_log_ctx(extra={"title": title, "url": url, "error": str(e)}),
+                    )
+                    raise Neo4jWriteError(f"Failed merging article {title}: {e}") from e
 
-            # Write chunks
-            created_count = 0
-            for idx, ch in enumerate(chunks):
-                text = str(ch.get("text", "") or "")
-                meta = ch.get("metadata") or {}
-                chunk_id = _hash_chunk_id(title, idx, text)
-                emb: Optional[List[float]] = None
-                if embeddings and idx < len(embeddings):
-                    emb = list(map(float, embeddings[idx]))
+                # Write chunks
+                created_count = 0
+                for idx, ch in enumerate(chunks):
+                    text = str(ch.get("text", "") or "")
+                    meta = ch.get("metadata") or {}
+                    chunk_id = _hash_chunk_id(title, idx, text)
+                    emb: Optional[List[float]] = None
+                    if embeddings and idx < len(embeddings):
+                        emb = list(map(float, embeddings[idx]))
 
-                params = {
-                    "title": title,
-                    "chunk_id": chunk_id,
-                    "index": int(idx),
-                    "text": text,
-                    "text_length": int(len(text)),
-                    "meta": dict(meta),
-                    "embedding": emb if (store_embeddings and emb is not None) else None,
-                    "embedding_dim": int(len(emb)) if (store_embeddings and emb is not None) else None,
-                }
+                    params = {
+                        "title": title,
+                        "chunk_id": chunk_id,
+                        "index": int(idx),
+                        "text": text,
+                        "text_length": int(len(text)),
+                        "meta": dict(meta),
+                        "embedding": emb if (store_embeddings and emb is not None) else None,
+                        "embedding_dim": int(len(emb)) if (store_embeddings and emb is not None) else None,
+                    }
 
-                session.run(
-                    """
-                    MATCH (a:Article {title: $title})
-                    MERGE (c:Chunk {id: $chunk_id})
-                    ON CREATE SET
-                        c.index = $index,
-                        c.text = $text,
-                        c.text_length = $text_length,
-                        c.meta = $meta,
-                        c.embedding = $embedding,
-                        c.embedding_dim = $embedding_dim
-                    ON MATCH SET
-                        c.text = $text,
-                        c.text_length = $text_length,
-                        c.meta = $meta,
-                        c.embedding = CASE WHEN $embedding IS NULL THEN c.embedding ELSE $embedding END,
-                        c.embedding_dim = CASE WHEN $embedding_dim IS NULL THEN c.embedding_dim ELSE $embedding_dim END
-                    MERGE (a)-[:HAS_CHUNK]->(c)
-                    """,
-                    params,
-                )
-                created_count += 1
+                    try:
+                        session.run(
+                            """
+                            MATCH (a:Article {title: $title})
+                            MERGE (c:Chunk {id: $chunk_id})
+                            ON CREATE SET
+                                c.index = $index,
+                                c.text = $text,
+                                c.text_length = $text_length,
+                                c.meta = $meta,
+                                c.embedding = $embedding,
+                                c.embedding_dim = $embedding_dim
+                            ON MATCH SET
+                                c.text = $text,
+                                c.text_length = $text_length,
+                                c.meta = $meta,
+                                c.embedding = CASE WHEN $embedding IS NULL THEN c.embedding ELSE $embedding END,
+                                c.embedding_dim = CASE WHEN $embedding_dim IS NULL THEN c.embedding_dim ELSE $embedding_dim END
+                            MERGE (a)-[:HAS_CHUNK]->(c)
+                            """,
+                            params,
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Failed writing chunk",
+                            extra=build_log_ctx(
+                                extra={"title": title, "chunk_index": idx, "chunk_id": chunk_id, "error": str(e)}
+                            ),
+                        )
+                        raise Neo4jWriteError(f"Failed writing chunk {idx} for {title}: {e}") from e
+                    created_count += 1
 
-            return 1, created_count
+                return 1, created_count
+        except Neo4jWriteError:
+            # Already logged with context; just re-raise
+            raise
+        except Exception as e:
+            logger.error("Unexpected Neo4j write error", extra=build_log_ctx(extra={"error": str(e)}))
+            raise Neo4jWriteError(f"Unexpected Neo4j error: {e}") from e

@@ -27,6 +27,8 @@ from api.services.chunking import chunk_text
 from api.services.rag_pipeline import embed_texts
 from api.services.neo4j_writer import Neo4jWriter
 from api.utils.logging import get_logger
+from api.exceptions import FetchError, Neo4jWriteError
+from api.utils.context import build_log_ctx
 
 logger = get_logger(__name__)
 
@@ -48,10 +50,33 @@ def _process_single_item(item: IngestionItem, writer: Neo4jWriter) -> Tuple[bool
     """
     value = (item.input_value or "").strip()
     if not value:
+        logger.warning(
+            "Empty input value for item",
+            extra=build_log_ctx(job_id=item.job_id, extra={"item_id": item.pk}),
+        )
         return False, "Empty input value"
 
-    page = fetch_wikipedia(value)
+    try:
+        page = fetch_wikipedia(value)
+    except FetchError as e:
+        logger.warning(
+            "FetchError in Wikipedia fetch",
+            extra=build_log_ctx(job_id=item.job_id, extra={"item_id": item.pk, "error": str(e)}),
+        )
+        return False, str(e)
+    except Exception as e:
+        logger.exception(
+            "Unexpected exception during fetch",
+            extra=build_log_ctx(job_id=item.job_id, extra={"item_id": item.pk}),
+        )
+        return False, f"Unexpected fetch error: {e}"
+
+    # Note: fetch_wikipedia now raises on failure; this path is defensive
     if not page or not page.text:
+        logger.warning(
+            "No content returned from fetch",
+            extra=build_log_ctx(job_id=item.job_id, extra={"item_id": item.pk}),
+        )
         return False, "Failed to fetch Wikipedia content"
 
     base_meta = {"title": page.title, "url": page.url}
@@ -60,13 +85,26 @@ def _process_single_item(item: IngestionItem, writer: Neo4jWriter) -> Tuple[bool
     texts = [c["text"] for c in chunks]
     embeddings = embed_texts(texts)
 
-    writer.write_article_with_chunks(
-        title=page.title,
-        url=page.url,
-        chunks=chunks,
-        embeddings=embeddings,
-        store_embeddings=True,
-    )
+    try:
+        writer.write_article_with_chunks(
+            title=page.title,
+            url=page.url,
+            chunks=chunks,
+            embeddings=embeddings,
+            store_embeddings=True,
+        )
+    except Neo4jWriteError as e:
+        logger.error(
+            "Neo4j write error",
+            extra=build_log_ctx(job_id=item.job_id, extra={"item_id": item.pk, "error": str(e)}),
+        )
+        return False, str(e)
+    except Exception as e:
+        logger.exception(
+            "Unexpected exception during Neo4j write",
+            extra=build_log_ctx(job_id=item.job_id, extra={"item_id": item.pk}),
+        )
+        return False, f"Unexpected Neo4j error: {e}"
 
     return True, page.title
 
@@ -92,6 +130,11 @@ def run_job_pipeline(job: IngestionJob, queryset=None) -> OrchestratorResult:
     failed = 0
     details: List[Dict[str, str]] = []
 
+    logger.info(
+        "Starting job pipeline",
+        extra=build_log_ctx(job_id=job.pk, extra={"items": total}),
+    )
+
     # Update job status to RUNNING
     with transaction.atomic():
         job.status = IngestionJob.Status.RUNNING
@@ -113,7 +156,10 @@ def run_job_pipeline(job: IngestionJob, queryset=None) -> OrchestratorResult:
             except Exception as e:
                 ok = False
                 message = f"Exception: {e}"
-                logger.exception("Error processing item %s", item.pk)
+                logger.exception(
+                    "Unhandled error processing item",
+                    extra=build_log_ctx(job_id=job.pk, extra={"item_id": item.pk}),
+                )
 
             with transaction.atomic():
                 if ok:
@@ -141,6 +187,10 @@ def run_job_pipeline(job: IngestionJob, queryset=None) -> OrchestratorResult:
             job.status = IngestionJob.Status.SUCCESS if failed == 0 else IngestionJob.Status.FAILED
             job.save(update_fields=["status", "updated_at"])
 
+        logger.info(
+            "Finished job pipeline",
+            extra=build_log_ctx(job_id=job.pk, extra={"succeeded": succeeded, "failed": failed}),
+        )
     finally:
         writer.close()
 

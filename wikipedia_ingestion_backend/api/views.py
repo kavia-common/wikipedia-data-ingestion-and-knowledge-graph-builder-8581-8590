@@ -21,6 +21,11 @@ from .serializers import (
 from .services.csv_parser import classify_source, parse_csv_content
 from .services.pipeline_orchestrator import OrchestratorResult
 from .tasks import submit_ingestion_job
+from .exceptions import CSVFormatError
+from .utils.logging import get_logger
+from .utils.context import build_log_ctx
+
+logger = get_logger(__name__)
 
 
 @api_view(["GET"])
@@ -69,9 +74,19 @@ def upload_csv(request):
 
     try:
         inputs = parse_csv_content(csv_file.read(), column_name=column_name, has_header=has_header)
-    except Exception as e:
+    except CSVFormatError as e:
+        logger.warning(
+            "CSV parsing failed",
+            extra=build_log_ctx(request, extra={"error": str(e)}),
+        )
         return Response(
             {"success": False, "error": f"Failed to parse CSV: {e}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except Exception as e:
+        logger.exception("Unexpected error parsing CSV", extra=build_log_ctx(request))
+        return Response(
+            {"success": False, "error": f"Unexpected error parsing CSV: {e}"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -101,10 +116,19 @@ def upload_csv(request):
         )
     IngestionItem.objects.bulk_create(items, batch_size=500)
 
+    logger.info(
+        "Created ingestion job",
+        extra=build_log_ctx(request, job_id=job.id, extra={"items": len(inputs)}),
+    )
+
     # Submit to background executor (or run synchronously if configured)
     future, mode = submit_ingestion_job(job)
 
     if mode == "async":
+        logger.info(
+            "Submitted job for background processing",
+            extra=build_log_ctx(request, job_id=job.id),
+        )
         # Immediately return pending status; processing happens in background
         data = {
             "success": True,
@@ -204,10 +228,19 @@ def single_ingest(request):
         status=IngestionItem.Status.PENDING,
     )
 
+    logger.info(
+        "Created single ingestion job",
+        extra=build_log_ctx(request, job_id=job.id, extra={"source_type": source_type}),
+    )
+
     # Submit to background executor (or run synchronously)
     future, mode = submit_ingestion_job(job)
 
     if mode == "async":
+        logger.info(
+            "Submitted single job for background processing",
+            extra=build_log_ctx(request, job_id=job.id),
+        )
         data = {
             "success": True,
             "job_id": job.id,

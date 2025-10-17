@@ -27,6 +27,8 @@ import wikipediaapi
 
 from api.utils.env import get_request_timeout
 from api.utils.logging import get_logger
+from api.exceptions import FetchError
+from api.utils.context import build_log_ctx
 
 logger = get_logger(__name__)
 
@@ -73,7 +75,10 @@ def _search_and_fetch(topic: str, lang: str = "en") -> Optional[WikipediaPage]:
         url = wikipedia_py.page(best).url
         return WikipediaPage(title=best, url=url, text=_clean_text(summary))
     except Exception as e:
-        logger.warning("Search and fetch failed for topic '%s': %s", topic, e)
+        logger.warning(
+            "Search and fetch failed for topic",
+            extra=build_log_ctx(extra={"topic": topic, "error": str(e)}),
+        )
         return None
 
 
@@ -101,7 +106,10 @@ def _fetch_from_url(url: str, timeout: int) -> Optional[WikipediaPage]:
         page_url = canonical["href"] if canonical and canonical.get("href") else url
         return WikipediaPage(title=title, url=page_url, text=text)
     except Exception as e:
-        logger.warning("Fetch from URL failed for '%s': %s", url, e)
+        logger.warning(
+            "Fetch from URL failed",
+            extra=build_log_ctx(extra={"url": url, "error": str(e)}),
+        )
         return None
 
 
@@ -142,8 +150,15 @@ def fetch_wikipedia(topic_or_url: str, lang: str = "en", retries: int = 2) -> Op
                     return page
             # If reached here, we didn't get text; break and retry
             attempt += 1
+            logger.info(
+                "Fetch attempt failed; will retry if attempts remain",
+                extra=build_log_ctx(extra={"attempt": attempt, "value": value, "retries": retries}),
+            )
         except Exception as e:
-            logger.info("Fetch attempt %d failed for '%s': %s", attempt, value, e)
+            logger.info(
+                "Fetch attempt raised exception; will retry if attempts remain",
+                extra=build_log_ctx(extra={"attempt": attempt, "value": value, "error": str(e), "retries": retries}),
+            )
             attempt += 1
 
-    return None
+    raise FetchError(f"Unable to fetch Wikipedia content for: {value}")

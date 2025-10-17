@@ -60,6 +60,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Attach request IDs for structured logging
+    "api.middleware.RequestIDMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -136,7 +138,8 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "verbose": {
-            "format": "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+            # Include optional structured context dict if present
+            "format": "%(asctime)s | %(levelname)s | %(name)s | %(message)s | %(context)s",
         },
         "simple": {
             "format": "%(levelname)s: %(message)s",

@@ -55,7 +55,7 @@ def _ensure_executor() -> Optional[ThreadPoolExecutor]:
         return None
     if _EXECUTOR is None:
         max_workers = max(1, _get_max_workers())
-        logger.info("Initializing ThreadPoolExecutor with max_workers=%s", max_workers)
+        logger.info("Initializing ThreadPoolExecutor", extra={"context": {"max_workers": max_workers}})
         _EXECUTOR = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ingest")
         # Register an atexit hook to attempt a graceful shutdown
         atexit.register(_shutdown_executor)
@@ -69,10 +69,10 @@ def _shutdown_executor():
     global _EXECUTOR
     if _EXECUTOR is not None:
         try:
-            logger.info("Shutting down ThreadPoolExecutor...")
+            logger.info("Shutting down ThreadPoolExecutor...", extra={"context": {}})
             _EXECUTOR.shutdown(wait=False, cancel_futures=False)
         except Exception as e:
-            logger.warning("Error during executor shutdown: %s", e)
+            logger.warning("Error during executor shutdown", extra={"context": {"error": str(e)}})
         finally:
             _EXECUTOR = None
 
@@ -108,7 +108,10 @@ def submit_ingestion_job(job: IngestionJob) -> Tuple[Optional[Future], str]:
     - Otherwise, submits to ThreadPoolExecutor, returns (Future, "async").
     """
     if _use_sync_ingest():
-        logger.info("USE_SYNC_INGEST enabled; running job %s synchronously.", job.pk)
+        logger.info(
+            "USE_SYNC_INGEST enabled; running job synchronously.",
+            extra={"context": {"job_id": job.pk}},
+        )
         # Run synchronously in the request thread
         run_job_pipeline(job)
         return None, "sync"
@@ -117,7 +120,10 @@ def submit_ingestion_job(job: IngestionJob) -> Tuple[Optional[Future], str]:
     if executor is None:
         # This path should not hit because _use_sync_ingest returns above,
         # but keep a safe fallback.
-        logger.info("Executor unavailable; running job %s synchronously (fallback).", job.pk)
+        logger.info(
+            "Executor unavailable; running job synchronously (fallback).",
+            extra={"context": {"job_id": job.pk}},
+        )
         run_job_pipeline(job)
         return None, "sync"
 
