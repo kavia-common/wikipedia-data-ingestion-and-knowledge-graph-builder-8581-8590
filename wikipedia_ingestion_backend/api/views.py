@@ -19,7 +19,8 @@ from .serializers import (
     UploadCSVRequestSerializer,
 )
 from .services.csv_parser import classify_source, parse_csv_content
-from .services.pipeline_orchestrator import OrchestratorResult, run_job_pipeline
+from .services.pipeline_orchestrator import OrchestratorResult
+from .tasks import submit_ingestion_job
 
 
 @api_view(["GET"])
@@ -100,21 +101,44 @@ def upload_csv(request):
         )
     IngestionItem.objects.bulk_create(items, batch_size=500)
 
-    # Run the pipeline synchronously for now
-    result: OrchestratorResult = run_job_pipeline(job)
+    # Submit to background executor (or run synchronously if configured)
+    future, mode = submit_ingestion_job(job)
 
-    counts = {
-        "total": result.total,
-        "processed": job.processed_items,
-        "succeeded": result.succeeded,
-        "failed": result.failed,
-    }
+    if mode == "async":
+        # Immediately return pending status; processing happens in background
+        data = {
+            "success": True,
+            "job_id": job.id,
+            "status": job.status,  # should be PENDING initially; orchestrator will update to RUNNING shortly
+            "counts": {
+                "total": job.total_items,
+                "processed": job.processed_items,
+                "succeeded": 0,
+                "failed": 0,
+            },
+            "detail": {"message": "Job submitted for background processing."},
+        }
+        return Response(data, status=status.HTTP_200_OK)
+
+    # Sync path: return final result
+    # For sync mode, orchestrator has fully processed the job by now
+    result: OrchestratorResult = OrchestratorResult(
+        total=job.total_items,
+        succeeded=job.items.filter(status=IngestionItem.Status.SUCCESS).count(),
+        failed=job.items.filter(status=IngestionItem.Status.FAILED).count(),
+        details=[],
+    )
     data = {
         "success": True,
         "job_id": job.id,
         "status": job.status,
-        "counts": counts,
-        "detail": result.details,
+        "counts": {
+            "total": result.total,
+            "processed": job.processed_items,
+            "succeeded": result.succeeded,
+            "failed": result.failed,
+        },
+        "detail": {"message": "Job ran synchronously (USE_SYNC_INGEST)."},
     }
     return Response(data, status=status.HTTP_200_OK)
 
@@ -180,20 +204,42 @@ def single_ingest(request):
         status=IngestionItem.Status.PENDING,
     )
 
-    result: OrchestratorResult = run_job_pipeline(job)
+    # Submit to background executor (or run synchronously)
+    future, mode = submit_ingestion_job(job)
 
-    counts = {
-        "total": result.total,
-        "processed": job.processed_items,
-        "succeeded": result.succeeded,
-        "failed": result.failed,
-    }
+    if mode == "async":
+        data = {
+            "success": True,
+            "job_id": job.id,
+            "status": job.status,
+            "counts": {
+                "total": job.total_items,
+                "processed": job.processed_items,
+                "succeeded": 0,
+                "failed": 0,
+            },
+            "detail": {"message": "Job submitted for background processing."},
+        }
+        return Response(data, status=status.HTTP_200_OK)
+
+    # Sync fallback response
+    result: OrchestratorResult = OrchestratorResult(
+        total=job.total_items,
+        succeeded=job.items.filter(status=IngestionItem.Status.SUCCESS).count(),
+        failed=job.items.filter(status=IngestionItem.Status.FAILED).count(),
+        details=[],
+    )
     data = {
         "success": True,
         "job_id": job.id,
         "status": job.status,
-        "counts": counts,
-        "detail": result.details,
+        "counts": {
+            "total": result.total,
+            "processed": job.processed_items,
+            "succeeded": result.succeeded,
+            "failed": result.failed,
+        },
+        "detail": {"message": "Job ran synchronously (USE_SYNC_INGEST)."},
     }
     return Response(data, status=status.HTTP_200_OK)
 

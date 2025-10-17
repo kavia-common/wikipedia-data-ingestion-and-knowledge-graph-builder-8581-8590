@@ -73,3 +73,19 @@ def get_neo4j_user() -> str:
 def get_neo4j_password() -> str:
     """Return Neo4j password."""
     return get_env("NEO4J_PASSWORD", "") or ""
+
+
+# PUBLIC_INTERFACE
+def get_max_workers() -> int:
+    """Return MAX_WORKERS for ThreadPoolExecutor size, default 4."""
+    try:
+        return int(get_env("MAX_WORKERS", "4") or "4")
+    except ValueError:
+        return 4
+
+
+# PUBLIC_INTERFACE
+def use_sync_ingest() -> bool:
+    """Return True if USE_SYNC_INGEST is set to a truthy value to disable background execution."""
+    val = (get_env("USE_SYNC_INGEST", "") or "").strip().lower()
+    return val in {"1", "true", "yes", "on"}
