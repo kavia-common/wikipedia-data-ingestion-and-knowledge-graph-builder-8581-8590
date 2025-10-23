@@ -1,113 +1,192 @@
-# wikipedia-data-ingestion-and-knowledge-graph-builder-8581-8590
+# Wikipedia Data Ingestion and Knowledge Graph Builder (Django Backend)
 
-Django backend for uploading CSVs of Wikipedia topics/links, processing content via a RAG pipeline, and ingesting into Neo4j.
-
-Key endpoints (prefixed with /api):
-- Health: GET /api/health/
-- Upload CSV: POST /api/ingest/upload-csv/
-- Single ingest: POST /api/ingest/single/
-- Job status: GET /api/ingest/jobs/{job_id}/
-- Job items: GET /api/ingest/jobs/{job_id}/items/
+This backend reads Wikipedia topics or links (via CSV upload or single input), retrieves content, chunks and embeds it through a RAG pipeline, and ingests the results into a Neo4j knowledge graph.
 
 API documentation:
 - Swagger UI: /docs
 - ReDoc: /redoc
 - Raw schema: /swagger.json
 
-Project layout:
-- wikipedia_ingestion_backend/: Django project root
-  - config/: Django project config and settings
-  - api/: Application containing models, services, and views
-  - interfaces/: Generated OpenAPI specs
+Generate OpenAPI schema file:
+- From project root: `python manage.py generate_openapi --host localhost:8000 --scheme http --base-path /api`
+- Output: `wikipedia_ingestion_backend/interfaces/openapi.json`
 
-## Quick start
+## Overview
 
-1) Create and populate an environment file
+- Ingestion flow: CSV or single value → Wikipedia fetch → chunking (LangChain) → embeddings (local sentence-transformers or optional OpenAI) → Neo4j write.
+- Django uses SQLite for app metadata; Neo4j stores the knowledge graph.
+- Background execution via a thread pool is enabled by default and can be disabled with USE_SYNC_INGEST for constrained environments.
 
-From the Django project root (wikipedia_ingestion_backend/), copy the example:
+## Prerequisites
+
+- Python 3.10+
+- Neo4j instance reachable from the app
+- Optional: OpenAI API key if using OpenAI embeddings
+
+## Setup
+
+### 1) Create a virtual environment and install dependencies
+- Navigate to the Django project root (contains manage.py): `wikipedia-data-ingestion-and-knowledge-graph-builder-8581-8590/wikipedia_ingestion_backend`
+- Then:
+
 ```
-cp .env.example .env
-```
-
-Edit `.env` as needed. Minimum required for full ingestion:
-- NEO4J_URI
-- NEO4J_USER
-- NEO4J_PASSWORD
-
-Optional but recommended:
-- EMBEDDINGS_PROVIDER (defaults to sentence-transformers)
-- For OpenAI embeddings: OPENAI_API_KEY and optional OPENAI_EMBEDDINGS_MODEL
-
-2) Install dependencies (prefer a virtual environment)
-```
-cd wikipedia_ingestion_backend
+python -m venv .venv
+. .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-3) Apply migrations and run the server
+If you plan to use OpenAI embeddings, also install the OpenAI client:
+```
+pip install openai
+```
+
+### 2) Configure environment variables (.env)
+
+Create a `.env` file in the Django project root (same folder as manage.py). Example:
+
+```
+# Django
+DJANGO_SECRET_KEY=unsafe-dev-key-change-me
+DEBUG=true
+ALLOWED_HOSTS=localhost,127.0.0.1
+
+# Neo4j connectivity
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=yourpassword
+
+# Embeddings provider
+# Default is local sentence-transformers (no network); for OpenAI set EMBEDDINGS_PROVIDER=openai
+EMBEDDINGS_PROVIDER=sentence-transformers
+# Optional: when using OpenAI
+OPENAI_API_KEY=sk-...
+OPENAI_EMBEDDINGS_MODEL=text-embedding-3-small
+
+# Chunking and timeouts
+RAG_CHUNK_SIZE=1000
+RAG_CHUNK_OVERLAP=150
+REQUEST_TIMEOUT=60
+
+# Background execution
+MAX_WORKERS=4
+# If true/1, disable threads and run ingestion in the request thread
+USE_SYNC_INGEST=
+
+# Optional docs generation hints
+SITE_HOST=localhost:8000
+SITE_SCHEME=http
+```
+
+Environment variables used by the app:
+- NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD (required for ingestion)
+- EMBEDDINGS_PROVIDER (default: sentence-transformers)
+- Optional for OpenAI: OPENAI_API_KEY, OPENAI_EMBEDDINGS_MODEL
+- RAG_CHUNK_SIZE, RAG_CHUNK_OVERLAP (chunking behavior)
+- REQUEST_TIMEOUT (Wikipedia and HTTP fetch timeouts)
+- MAX_WORKERS (thread pool size)
+- USE_SYNC_INGEST (run synchronously when set to a truthy value)
+- DJANGO_SECRET_KEY, ALLOWED_HOSTS, DEBUG
+
+Notes:
+- settings.py also reads `.env` automatically using django-environ.
+- ALLOWED_HOSTS must include your host when DEBUG=false.
+
+### 3) Apply migrations
+
+From the Django project root (wikipedia_ingestion_backend):
 ```
 python manage.py migrate
+```
+
+### 4) Run the development server
+
+```
 python manage.py runserver 0.0.0.0:8000
 ```
 
-Visit:
-- http://localhost:8000/docs for Swagger UI
-- http://localhost:8000/redoc for ReDoc
-- http://localhost:8000/swagger.json for the raw schema
+- Health check: http://localhost:8000/api/health/
+- API docs (live schema):
+  - Swagger UI: http://localhost:8000/docs
+  - ReDoc: http://localhost:8000/redoc
+  - Raw schema: http://localhost:8000/swagger.json
 
-4) Generate OpenAPI schema file (optional)
+### 5) Optional: Generate a static OpenAPI file
+
+This command computes absolute URLs based on the provided host/scheme/base path and writes to interfaces/openapi.json:
 ```
 python manage.py generate_openapi --host localhost:8000 --scheme http --base-path /api
-# Output written to: wikipedia_ingestion_backend/interfaces/openapi.json
+# Output: wikipedia_ingestion_backend/interfaces/openapi.json
 ```
 
-## Environment variables
+## Using the API
 
-Required (for ingestion):
-- NEO4J_URI: e.g., bolt://localhost:7687 or neo4j+s://<host>
-- NEO4J_USER
-- NEO4J_PASSWORD
+Base path: /api
 
-Django/runtime:
-- DJANGO_SECRET_KEY: Required in production, defaults to a dev key.
-- DEBUG: true/false; default false.
-- ALLOWED_HOSTS: comma-separated hostnames; default covers localhost and testserver.
+- Health: GET /api/health/
+- Upload CSV for ingestion: POST /api/ingest/upload-csv/ (multipart/form-data; field name: csv_file)
+- Single value ingestion: POST /api/ingest/single/ (JSON; {"value": "Alan Turing"})
+- Job status: GET /api/ingest/jobs/{job_id}/
+- Job items: GET /api/ingest/jobs/{job_id}/items/
 
-RAG/embeddings:
-- EMBEDDINGS_PROVIDER: "sentence-transformers" (default) or "openai"
-- OPENAI_API_KEY: required only if EMBEDDINGS_PROVIDER=openai
-- OPENAI_EMBEDDINGS_MODEL: optional override; default text-embedding-3-small
+Standard response envelope used across endpoints:
+- success: boolean
+- job_id: integer when applicable
+- status: job status
+- counts: total, processed, succeeded, failed when applicable
+- error/detail: context-specific information
 
-Chunking/timeouts:
-- RAG_CHUNK_SIZE: default 1000
-- RAG_CHUNK_OVERLAP: default 150
-- REQUEST_TIMEOUT: default 60 (seconds)
+## Embeddings providers
 
-Background execution:
-- MAX_WORKERS: default 4
-- USE_SYNC_INGEST: if "true"/"1", runs ingestion synchronously (no background threads)
+- Default: sentence-transformers
+  - The first run downloads the model specified by SENTENCE_TRANSFORMERS_MODEL (default: all-MiniLM-L6-v2).
+  - No API key required; runs locally.
+- Optional: OpenAI
+  - Set EMBEDDINGS_PROVIDER=openai and provide OPENAI_API_KEY (and optionally OPENAI_EMBEDDINGS_MODEL).
+  - The openai package must be installed in your environment.
 
-Docs generation helpers (optional):
-- SITE_HOST: host in generated docs (default testserver)
-- SITE_SCHEME: http|https
+If embeddings fail at runtime, the pipeline logs the error and continues without storing embeddings on the Chunk nodes.
 
-An example `.env` is provided at `wikipedia_ingestion_backend/.env.example`.
+## Guidance for constrained environments
 
-## Running ingestion
+If you cannot spawn threads or want deterministic request behavior, enable synchronous ingestion by setting:
+- USE_SYNC_INGEST=true
 
-- Upload a CSV with "csv_file" in a multipart/form-data POST to /api/ingest/upload-csv/.
-- Or POST JSON to /api/ingest/single/ with:
-```
-{
-  "value": "Alan Turing"
-}
-```
-Responses include a standardized envelope with job_id and counts. Poll:
-- GET /api/ingest/jobs/{job_id}/
-- GET /api/ingest/jobs/{job_id}/items/
+This causes ingestion to complete within the API request. Expect longer request durations.
 
-## Notes
+## Troubleshooting
 
-- SQLite is used for Django metadata; Neo4j is used for the knowledge graph.
-- If running with EMBEDDINGS_PROVIDER=openai, ensure OPENAI_API_KEY is set in the environment.
-- For local embeddings, sentence-transformers will download a small model on first use.
+- Neo4j connectivity/auth
+  - Ensure NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD are set correctly.
+  - Verify the instance is reachable from the application host and ports are open.
+  - For encrypted connections (neo4j+s://), ensure certificates and networking are configured.
+
+- Wikipedia fetch timeouts/slow responses
+  - Increase REQUEST_TIMEOUT (seconds) in your .env if pages regularly time out.
+  - Some topics or pages may be large or slow; retries are built-in but limited.
+
+- Embeddings/model download issues
+  - On first use, sentence-transformers will download a small model; ensure internet connectivity.
+  - For OpenAI embeddings, verify OPENAI_API_KEY is set and the environment has `openai` installed.
+
+- ALLOWED_HOSTS errors in production
+  - Include your domain or IP in ALLOWED_HOSTS when DEBUG=false.
+
+- Background execution behavior
+  - Set MAX_WORKERS to control concurrency.
+  - If resource constrained or deploying in environments that restrict threading, set USE_SYNC_INGEST=true.
+
+## Project layout
+
+- wikipedia_ingestion_backend/: Django project root
+  - config/: Django settings and URL routing
+  - api/: Models, views, services, tasks, and utilities
+  - interfaces/: Generated OpenAPI specs
+
+## Health and API docs quick links
+
+Once the server is running locally:
+- Health: http://localhost:8000/api/health/
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+- Swagger JSON: http://localhost:8000/swagger.json
