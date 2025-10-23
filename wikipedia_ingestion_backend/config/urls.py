@@ -38,6 +38,18 @@ API_INFO = openapi.Info(
     license=openapi.License(name="MIT License"),
 )
 
+# Group tags used by @swagger_auto_schema in views
+openapi_tags = [
+    {
+        "name": "health",
+        "description": "Service health and readiness checks",
+    },
+    {
+        "name": "ingestion",
+        "description": "CSV upload, single ingest, job status and item listing",
+    },
+]
+
 schema_view = get_schema_view(
     API_INFO,
     public=True,

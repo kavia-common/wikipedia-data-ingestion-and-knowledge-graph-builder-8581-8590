@@ -50,6 +50,7 @@ def health(request):
 
     Returns:
         200 OK with a small JSON body indicating service availability.
+        Response body: {"message": "Server is up!"}
     """
     return Response({"message": "Server is up!"})
 
@@ -83,12 +84,15 @@ def upload_csv(request):
     creates an IngestionJob and child IngestionItems, executes the pipeline,
     and returns a standardized JSON response.
 
-    Response body:
-    - success: boolean
-    - job_id: integer
-    - status: string (PENDING/RUNNING/SUCCESS/FAILED)
-    - counts: object with total/processed/succeeded/failed
-    - detail: optional metadata message
+    Standardized response envelope:
+      {
+        "success": true|false,
+        "job_id": <int, when applicable>,
+        "status": "<status>",
+        "counts": {"total": int, "processed": int, "succeeded": int, "failed": int},
+        "error": "<message, when applicable>",
+        "detail": <object|string with extra details>
+      }
     """
     serializer = UploadCSVRequestSerializer(data=request.data)
     if not serializer.is_valid():
@@ -230,6 +234,8 @@ def single_ingest(request):
 
     Accepts JSON with a single 'value' and optional 'source_type' and 'config'.
     Creates a job and item, executes the pipeline, and returns standardized JSON.
+
+    Envelope fields mirror upload_csv for consistency.
     """
     serializer = SingleIngestRequestSerializer(data=request.data)
     if not serializer.is_valid():
@@ -335,7 +341,7 @@ def job_status(request, job_id: int):
     """
     GET /api/ingest/jobs/{job_id}/
 
-    Returns serialized job details including counts.
+    Returns serialized job details including counts in the standardized envelope.
     """
     job = get_object_or_404(IngestionJob, pk=job_id)
     data = IngestionJobSerializer(job).data
@@ -377,7 +383,7 @@ def job_items(request, job_id: int):
     """
     GET /api/ingest/jobs/{job_id}/items/
 
-    Returns serialized list of items for a given job.
+    Returns serialized list of items for a given job in the standardized envelope.
     """
     job = get_object_or_404(IngestionJob, pk=job_id)
     items_qs = job.items.all().order_by("-created_at")
