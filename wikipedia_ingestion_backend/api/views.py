@@ -51,6 +51,9 @@ def health(request):
     Returns:
         200 OK with a small JSON body indicating service availability.
         Response body: {"message": "Server is up!"}
+    Notes:
+        - Path registered as /api/health/ in api.urls with name="Health".
+        - Intended for health/readiness probes to receive HTTP 200.
     """
     return Response({"message": "Server is up!"})
 
@@ -342,6 +345,15 @@ def job_status(request, job_id: int):
     GET /api/ingest/jobs/{job_id}/
 
     Returns serialized job details including counts in the standardized envelope.
+
+    Standardized envelope:
+        {
+            "success": true,
+            "job_id": <int>,
+            "status": "<PENDING|RUNNING|SUCCESS|FAILED>",
+            "counts": {"total": int, "processed": int, "succeeded": int, "failed": int},
+            "detail": <IngestionJob serialized object>
+        }
     """
     job = get_object_or_404(IngestionJob, pk=job_id)
     data = IngestionJobSerializer(job).data
@@ -384,6 +396,15 @@ def job_items(request, job_id: int):
     GET /api/ingest/jobs/{job_id}/items/
 
     Returns serialized list of items for a given job in the standardized envelope.
+
+    Standardized envelope:
+        {
+            "success": true,
+            "job_id": <int>,
+            "status": "<PENDING|RUNNING|SUCCESS|FAILED>",
+            "counts": {"total": int, "processed": int, "succeeded": int, "failed": int},
+            "detail": [<IngestionItem serialized objects>]
+        }
     """
     job = get_object_or_404(IngestionJob, pk=job_id)
     items_qs = job.items.all().order_by("-created_at")
