@@ -64,12 +64,12 @@ def _process_single_item(item: IngestionItem, writer: Neo4jWriter) -> Tuple[bool
             extra=build_log_ctx(job_id=item.job_id, extra={"item_id": item.pk, "error": str(e)}),
         )
         return False, str(e)
-    except Exception as e:
+    except Exception:
         logger.exception(
             "Unexpected exception during fetch",
             extra=build_log_ctx(job_id=item.job_id, extra={"item_id": item.pk}),
         )
-        return False, f"Unexpected fetch error: {e}"
+        return False, "Unexpected fetch error"
 
     # Note: fetch_wikipedia now raises on failure; this path is defensive
     if not page or not page.text:
@@ -82,16 +82,32 @@ def _process_single_item(item: IngestionItem, writer: Neo4jWriter) -> Tuple[bool
     base_meta = {"title": page.title, "url": page.url}
     chunks = chunk_text(page.text, metadata=base_meta)
 
-    texts = [c["text"] for c in chunks]
-    embeddings = embed_texts(texts)
+    # If no chunks were produced, skip writing to Neo4j gracefully
+    if not chunks:
+        logger.info(
+            "No chunks generated for page; skipping Neo4j write",
+            extra=build_log_ctx(job_id=item.job_id, extra={"item_id": item.pk, "title": page.title}),
+        )
+        return True, page.title
+
+    texts = [c.get("text", "") for c in chunks]
+    # Guard against embedding errors causing entire pipeline to fail
+    try:
+        embeddings = embed_texts(texts) if texts else []
+    except Exception:
+        logger.exception(
+            "Embedding generation failed; proceeding without embeddings",
+            extra=build_log_ctx(job_id=item.job_id, extra={"item_id": item.pk, "title": page.title}),
+        )
+        embeddings = []
 
     try:
         writer.write_article_with_chunks(
             title=page.title,
             url=page.url,
             chunks=chunks,
-            embeddings=embeddings,
-            store_embeddings=True,
+            embeddings=embeddings if embeddings else None,
+            store_embeddings=bool(embeddings),
         )
     except Neo4jWriteError as e:
         logger.error(

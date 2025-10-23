@@ -118,6 +118,9 @@ def fetch_wikipedia(topic_or_url: str, lang: str = "en", retries: int = 2) -> Op
     """
     Fetch Wikipedia content for a given topic string or URL.
 
+    Raises:
+        FetchError: When content cannot be retrieved after retries.
+
     Args:
         topic_or_url: Search topic or direct Wikipedia URL.
         lang: Wikipedia language code, default 'en'.

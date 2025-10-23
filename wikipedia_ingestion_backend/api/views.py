@@ -33,7 +33,7 @@ logger = get_logger(__name__)
     method="get",
     operation_id="health",
     operation_summary="Service health check",
-    operation_description="Returns a simple message indicating the API is reachable.",
+    operation_description="Returns a simple message indicating the API is reachable. Useful for health checks and readiness probes.",
     responses={200: openapi.Response(description="OK", schema=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={"message": openapi.Schema(type=openapi.TYPE_STRING, description="Uptime message")},
@@ -82,6 +82,13 @@ def upload_csv(request):
     Accepts a multipart/form-data payload with a CSV file and optional parameters,
     creates an IngestionJob and child IngestionItems, executes the pipeline,
     and returns a standardized JSON response.
+
+    Response body:
+    - success: boolean
+    - job_id: integer
+    - status: string (PENDING/RUNNING/SUCCESS/FAILED)
+    - counts: object with total/processed/succeeded/failed
+    - detail: optional metadata message
     """
     serializer = UploadCSVRequestSerializer(data=request.data)
     if not serializer.is_valid():
@@ -96,6 +103,12 @@ def upload_csv(request):
     config = serializer.validated_data.get("config") or None
 
     try:
+        try:
+            # Ensure file pointer is at start in case of prior access by parsers
+            if hasattr(csv_file, "seek"):
+                csv_file.seek(0)
+        except Exception:
+            pass
         inputs = parse_csv_content(csv_file.read(), column_name=column_name, has_header=has_header)
     except CSVFormatError as e:
         logger.warning(
