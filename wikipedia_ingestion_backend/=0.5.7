@@ -1,0 +1,44 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting numpy<2
+  Downloading numpy-1.26.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (61 kB)
+Collecting SQLAlchemy<2.0.36,>=1.4
+  Downloading SQLAlchemy-2.0.35-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (9.6 kB)
+Collecting dataclasses-json
+  Downloading dataclasses_json-0.6.7-py3-none-any.whl.metadata (25 kB)
+Collecting httpx-sse<0.5.0,>=0.4.0
+  Downloading httpx_sse-0.4.3-py3-none-any.whl.metadata (9.7 kB)
+Collecting pydantic-settings<3.0.0,>=2.4.0
+  Downloading pydantic_settings-2.11.0-py3-none-any.whl.metadata (3.4 kB)
+Requirement already satisfied: typing-extensions>=4.6.0 in /usr/local/lib/python3.12/dist-packages (from SQLAlchemy<2.0.36,>=1.4) (4.12.2)
+Requirement already satisfied: greenlet!=0.4.17 in /usr/lib/python3/dist-packages (from SQLAlchemy<2.0.36,>=1.4) (3.0.3)
+Requirement already satisfied: pydantic>=2.7.0 in /home/kavia/.local/lib/python3.12/site-packages (from pydantic-settings<3.0.0,>=2.4.0) (2.9.2)
+Requirement already satisfied: python-dotenv>=0.21.0 in /usr/local/lib/python3.12/dist-packages (from pydantic-settings<3.0.0,>=2.4.0) (1.0.1)
+Collecting typing-inspection>=0.4.0 (from pydantic-settings<3.0.0,>=2.4.0)
+  Downloading typing_inspection-0.4.2-py3-none-any.whl.metadata (2.6 kB)
+Collecting marshmallow<4.0.0,>=3.18.0 (from dataclasses-json)
+  Downloading marshmallow-3.26.1-py3-none-any.whl.metadata (7.3 kB)
+Collecting typing-inspect<1,>=0.4.0 (from dataclasses-json)
+  Downloading typing_inspect-0.9.0-py3-none-any.whl.metadata (1.5 kB)
+Requirement already satisfied: packaging>=17.0 in /usr/local/lib/python3.12/dist-packages (from marshmallow<4.0.0,>=3.18.0->dataclasses-json) (24.2)
+Collecting mypy-extensions>=0.3.0 (from typing-inspect<1,>=0.4.0->dataclasses-json)
+  Downloading mypy_extensions-1.1.0-py3-none-any.whl.metadata (1.1 kB)
+Requirement already satisfied: annotated-types>=0.6.0 in /usr/local/lib/python3.12/dist-packages (from pydantic>=2.7.0->pydantic-settings<3.0.0,>=2.4.0) (0.7.0)
+Requirement already satisfied: pydantic-core==2.23.4 in /home/kavia/.local/lib/python3.12/site-packages (from pydantic>=2.7.0->pydantic-settings<3.0.0,>=2.4.0) (2.23.4)
+Downloading numpy-1.26.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (18.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 18.0/18.0 MB 43.5 MB/s  0:00:00
+Downloading SQLAlchemy-2.0.35-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.2/3.2 MB 97.1 MB/s  0:00:00
+Downloading httpx_sse-0.4.3-py3-none-any.whl (9.0 kB)
+Downloading pydantic_settings-2.11.0-py3-none-any.whl (48 kB)
+Downloading dataclasses_json-0.6.7-py3-none-any.whl (28 kB)
+Downloading marshmallow-3.26.1-py3-none-any.whl (50 kB)
+Downloading typing_inspect-0.9.0-py3-none-any.whl (8.8 kB)
+Downloading mypy_extensions-1.1.0-py3-none-any.whl (5.0 kB)
+Downloading typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+Installing collected packages: typing-inspection, SQLAlchemy, numpy, mypy-extensions, marshmallow, httpx-sse, typing-inspect, pydantic-settings, dataclasses-json
+  Attempting uninstall: numpy
+    Found existing installation: numpy 2.1.3
+    Uninstalling numpy-2.1.3:
+      Successfully uninstalled numpy-2.1.3
+
+Successfully installed SQLAlchemy-2.0.35 dataclasses-json-0.6.7 httpx-sse-0.4.3 marshmallow-3.26.1 mypy-extensions-1.1.0 numpy-1.26.4 pydantic-settings-2.11.0 typing-inspect-0.9.0 typing-inspection-0.4.2
